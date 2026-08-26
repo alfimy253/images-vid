@@ -32,7 +32,7 @@ export default {
 
 		/*
 		 * IMAGE GENERATION API
-		 * Accepts dynamic prompt in request body
+		 * Accepts dynamic prompt and returns Base64 PNG
 		 */
 		if (
 			request.method === "POST" &&
@@ -53,16 +53,17 @@ export default {
 					{ prompt: body.prompt }
 				);
 
-				return new Response(
-					result as ReadableStream,
-					{
-						status: 200,
-						headers: {
-							"Content-Type": "image/png",
-							"Cache-Control": "no-store"
-						}
-					}
-				);
+				// Convert ReadableStream / ArrayBuffer to Base64 safely
+				const arrayBuffer = await new Response(result as ReadableStream).arrayBuffer();
+				const bytes = new Uint8Array(arrayBuffer);
+				let binary = "";
+				for (let i = 0; i < bytes.byteLength; i++) {
+					binary += String.fromCharCode(bytes[i]);
+				}
+				const base64 = btoa(binary);
+
+				return json({ success: true, image: base64 });
+
 			} catch (error) {
 				return json(
 					{
@@ -98,16 +99,16 @@ function json(
 }
 
 /*
- * HTML page with dynamic 30-prompt input, minimum selection validation, and MP4 generation.
+ * HTML Page with responsive CSS, flexible line input, and robust video synthesis.
  */
 function createHTML(): string {
 	return `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>30 Prompt AI Image to MP4 Generator</title>
+	<title>AI Image to MP4 Generator</title>
 
 	<style>
 		* {
@@ -116,40 +117,43 @@ function createHTML(): string {
 
 		body {
 			margin: 0;
-			padding: 24px;
+			padding: 16px;
 			background: #111;
 			color: white;
-			font-family: Arial, sans-serif;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 		}
 
 		h1 {
 			text-align: center;
-			margin: 0 0 20px;
+			margin: 0 0 16px 0;
+			font-size: 1.8rem;
 		}
 
 		.input-section {
+			width: 100%;
 			max-width: 900px;
-			margin: 0 auto 30px auto;
+			margin: 0 auto 24px auto;
 			background: #222;
-			padding: 20px;
+			padding: 16px;
 			border-radius: 10px;
 		}
 
 		textarea {
 			width: 100%;
-			height: 180px;
+			height: 150px;
 			background: #181818;
 			color: #fff;
 			border: 1px solid #333;
 			border-radius: 7px;
 			padding: 12px;
 			font-family: monospace;
-			font-size: 13px;
+			font-size: 14px;
 			resize: vertical;
 		}
 
 		.actions {
 			display: flex;
+			flex-wrap: wrap;
 			gap: 12px;
 			margin-top: 15px;
 			align-items: center;
@@ -165,6 +169,8 @@ function createHTML(): string {
 			font-weight: bold;
 			cursor: pointer;
 			font-size: 14px;
+			flex: 1 1 auto;
+			min-width: 160px;
 		}
 
 		button:disabled {
@@ -179,12 +185,17 @@ function createHTML(): string {
 		.counter-badge {
 			font-size: 14px;
 			color: #aaa;
+			text-align: center;
 		}
 
+		/* Responsive Grid Layout */
 		.gallery {
 			display: grid;
-			grid-template-columns: repeat(4, 1fr);
-			gap: 20px;
+			grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+			gap: 16px;
+			width: 100%;
+			max-width: 1200px;
+			margin: 0 auto;
 		}
 
 		.card {
@@ -196,6 +207,8 @@ function createHTML(): string {
 			border: 2px solid transparent;
 			cursor: pointer;
 			transition: border-color 0.2s;
+			display: flex;
+			flex-direction: column;
 		}
 
 		.card.selected {
@@ -216,6 +229,7 @@ function createHTML(): string {
 			justify-content: center;
 			font-size: 12px;
 			color: white;
+			z-index: 2;
 		}
 
 		.card.selected .select-overlay {
@@ -243,7 +257,8 @@ function createHTML(): string {
 
 		.loading {
 			color: #777;
-			font-size: 14px;
+			font-size: 13px;
+			text-align: center;
 		}
 
 		.error {
@@ -255,7 +270,7 @@ function createHTML(): string {
 
 		.prompt {
 			margin-top: 10px;
-			font-size: 13px;
+			font-size: 12px;
 			line-height: 1.4;
 			color: #bbb;
 			max-height: 40px;
@@ -264,8 +279,9 @@ function createHTML(): string {
 		}
 
 		.video-preview {
-			max-width: 900px;
-			margin: 30px auto;
+			width: 100%;
+			max-width: 800px;
+			margin: 20px auto;
 			text-align: center;
 		}
 
@@ -275,22 +291,16 @@ function createHTML(): string {
 			background: #000;
 		}
 
-		@media (max-width: 1000px) {
-			.gallery {
-				grid-template-columns: repeat(2, 1fr);
-			}
-		}
-
 		@media (max-width: 600px) {
 			body {
-				padding: 12px;
-			}
-			.gallery {
-				grid-template-columns: 1fr;
+				padding: 10px;
 			}
 			.actions {
 				flex-direction: column;
 				align-items: stretch;
+			}
+			button {
+				width: 100%;
 			}
 		}
 	</style>
@@ -302,12 +312,12 @@ function createHTML(): string {
 
 	<div class="input-section">
 		<label for="promptInput" style="display:block; margin-bottom: 8px; font-weight: bold;">
-			Enter your 30 Prompts (1 line per prompt):
+			Enter your Prompts (1 prompt per line — minimum 5 recommended):
 		</label>
-		<textarea id="promptInput" placeholder="Enter prompt 1...&#10;Enter prompt 2...&#10;Enter prompt 3..."></textarea>
+		<textarea id="promptInput" placeholder="Prompt 1: Epic landscape...&#10;Prompt 2: Futuristic city...&#10;Prompt 3: Cyberpunk street...&#10;Prompt 4: Cozy cafe in rain...&#10;Prompt 5: Astronaut on Mars..."></textarea>
 		
 		<div class="actions">
-			<button id="generateBtn" onclick="startBatch()">Generate All Images</button>
+			<button id="generateBtn" onclick="startBatch()">Generate Images</button>
 			
 			<div class="counter-badge">
 				Selected: <span id="selectedCount">0</span> / Min: 5
@@ -332,70 +342,50 @@ function createHTML(): string {
 			const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
 			if (lines.length === 0) {
-				alert("Please enter at least one prompt.");
+				alert("Please enter at least one prompt line.");
 				return;
 			}
 
-			const prompts = lines.slice(0, 30);
+			const prompts = lines.slice(0, 30); // Accept 5, 7, or up to 30 lines
 			const gallery = document.getElementById("gallery");
+			const generateBtn = document.getElementById("generateBtn");
+
+			generateBtn.disabled = true;
+			generateBtn.textContent = "Generating...";
 			gallery.innerHTML = "";
 			selectedIndices.clear();
 			loadedImages = {};
 			updateCompileButton();
 
-			/*
-			 * Create cards immediately.
-			 */
+			// Render cards for every entered line
 			prompts.forEach((prompt, index) => {
 				const card = document.createElement("div");
 				card.className = "card";
 				card.id = "card-" + index;
 				card.onclick = () => toggleSelect(index);
 
-				const overlay = document.createElement("div");
-				overlay.className = "select-overlay";
-				overlay.id = "check-" + index;
-				overlay.textContent = "✓";
-
-				const container = document.createElement("div");
-				container.className = "image-container";
-				container.id = "image-" + index;
-
-				const loading = document.createElement("div");
-				loading.className = "loading";
-				loading.textContent = "Generating image " + (index + 1) + "...";
-				container.appendChild(loading);
-
-				const promptElement = document.createElement("div");
-				promptElement.className = "prompt";
-				promptElement.textContent = (index + 1) + ". " + prompt;
-
-				card.appendChild(overlay);
-				card.appendChild(container);
-				card.appendChild(promptElement);
+				card.innerHTML = \`
+					<div class="select-overlay" id="check-\${index}">✓</div>
+					<div class="image-container" id="image-\${index}">
+						<div class="loading">Queued (\${index + 1})...</div>
+					</div>
+					<div class="prompt">\${index + 1}. \${escapeHTML(prompt)}</div>
+				\`;
 				gallery.appendChild(card);
 			});
 
-			/*
-			 * Process image generation in queue.
-			 */
-			const queue = prompts.map((prompt, index) => ({ prompt, index }));
-			const concurrency = 3;
-
-			async function worker() {
-				while (queue.length > 0) {
-					const item = queue.shift();
-					await generateImage(item.prompt, item.index);
-				}
+			// Process images sequentially (prevents crashing / worker freezing)
+			for (let i = 0; i < prompts.length; i++) {
+				await generateImage(prompts[i], i);
 			}
 
-			for (let i = 0; i < concurrency; i++) {
-				worker();
-			}
+			generateBtn.disabled = false;
+			generateBtn.textContent = "Generate Images";
 		}
 
 		async function generateImage(prompt, index) {
 			const container = document.getElementById("image-" + index);
+			container.innerHTML = \`<div class="loading">Generating image \${index + 1}...</div>\`;
 
 			try {
 				const response = await fetch("/generate", {
@@ -404,26 +394,23 @@ function createHTML(): string {
 					body: JSON.stringify({ prompt })
 				});
 
-				if (!response.ok) {
-					throw new Error("Generation failed");
+				const data = await response.json();
+
+				if (!response.ok || !data.success) {
+					throw new Error(data.error || "Generation failed");
 				}
 
-				const blob = await response.blob();
-				const imageURL = URL.createObjectURL(blob);
-
 				const img = new Image();
-				img.src = imageURL;
+				img.src = "data:image/png;base64," + data.image;
 				img.alt = "Generated image " + (index + 1);
 
 				container.innerHTML = "";
 				container.appendChild(img);
-
-				// Cache image element for rendering video canvas
 				loadedImages[index] = img;
 
 			} catch (error) {
 				console.error("Image " + (index + 1) + " failed:", error);
-				container.innerHTML = '<div class="error">Generation failed</div>';
+				container.innerHTML = \`<div class="error">\${error.message || "Failed"}</div>\`;
 			}
 		}
 
@@ -482,15 +469,15 @@ function createHTML(): string {
 					<h2>Compiled Video</h2>
 					<video src="\${videoUrl}" controls autoplay></video>
 					<br><br>
-					<a href="\${videoUrl}" download="generated-slideshow.\${mimeType.includes("mp4") ? "mp4" : "webm"}" style="color: #10b981;">Download Video File</a>
+					<a href="\${videoUrl}" download="generated-slideshow.\${mimeType.includes("mp4") ? "mp4" : "webm"}" style="color: #10b981; font-weight: bold;">Download Video File</a>
 				\`;
 			};
 
 			recorder.start();
 
-			// Draw each selected image onto canvas for 2 seconds (60 frames at 30 fps)
 			const sortedIndices = Array.from(selectedIndices).sort((a, b) => a - b);
 
+			// Render each selected image for 2 seconds (60 frames at 30 fps)
 			for (const idx of sortedIndices) {
 				const img = loadedImages[idx];
 				for (let frame = 0; frame < 60; frame++) {
@@ -501,9 +488,15 @@ function createHTML(): string {
 
 			recorder.stop();
 		}
+
+		function escapeHTML(str) {
+			return str.replace(/[&<>'"]/g, 
+				tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+			);
+		}
 	</script>
 
 </body>
 </html>
 	`;
-		}
+							}
